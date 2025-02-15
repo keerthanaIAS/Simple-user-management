@@ -1,12 +1,15 @@
 import { useEffect, useState } from "react";
-import { useUserStore } from "../store/userStore";
-import { deleteUser, createUser, updateUser } from "../services/userService";
+import { deleteUser, createUser, updateUser, getUsers } from "../services/userService";
 import { saveAs } from "file-saver";
 import Papa from "papaparse";
 import "bootstrap/dist/css/bootstrap.min.css";
+import { toast } from "react-toastify";
+import "react-toastify/dist/ReactToastify.css";
+import { ToastContainer } from "react-toastify";
 
 const UserTable = () => {
-  const { users, fetchUsers, total, undo, redo } = useUserStore();
+  const [users, setUsers] = useState<{ _id: string; name: string; email: string }[]>([]);
+  const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const totalPages = Math.ceil(total / 10);
   const [search, setSearch] = useState("");
@@ -17,14 +20,44 @@ const UserTable = () => {
   const [currentUser, setCurrentUser] = useState({ _id: "", name: "", email: "" });
   const [error, setError] = useState("");
 
+  // Undo/Redo History
+  const [history, setHistory] = useState<{ _id: string; name: string; email: string }[][]>([]);
+  const [future, setFuture] = useState<{ _id: string; name: string; email: string }[][]>([]);
+
+  // Fetch users from API
+  const fetchUsers = async (search: string, page: number) => {
+    setLoading(true);
+    try {
+      const { users, total } = await getUsers(search, page);
+      console.log('users, total', users, total)
+      setUsers(users);
+      setTotal(total);
+    } catch (error) {
+      console.error("Error fetching users:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Store the current state before making changes
+  const saveHistory = () => {
+    setHistory((prev: any) => [...prev, { users: [...users] }]);
+    setFuture([]); // Clear future history when making new changes
+  };
+
+  // Handle selection toggle
   const toggleSelection = (id: string) => {
     setSelectedUsers((prev) =>
       prev.includes(id) ? prev.filter((uid) => uid !== id) : [...prev, id]
     );
   };
 
+  // Delete selected users
   const deleteSelectedUsers = async () => {
     setLoading(true);
+    if (!selectedUsers.length) return;
+    saveHistory();
+    setUsers((prev) => prev.filter((user) => !selectedUsers.includes(user._id)));
     for (const id of selectedUsers) {
       await deleteUser(id);
     }
@@ -33,39 +66,69 @@ const UserTable = () => {
     setLoading(false);
   };
 
-  useEffect(() => {
-    setLoading(true);
-    fetchUsers(search, page).finally(() => setLoading(false));
-  }, [search, page]);
-
+  // Export users to CSV
   const exportToCSV = () => {
     const csv = Papa.unparse(selectedUsers.map((id) => users.find((u) => u._id === id)));
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
     saveAs(blob, "users.csv");
   };
 
-  // Handle form submission for adding/editing users
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!currentUser.name || !currentUser.email) {
-      setError("All fields are required");
+      toast.error("All fields are required");
       return;
     }
     setLoading(true);
-    if (modalType === "add") {
-      await createUser(currentUser);
-    } else if (modalType === "edit") {
-      await updateUser(currentUser._id, currentUser);
+    saveHistory();
+    try {
+      if (modalType === "add") {
+        await createUser(currentUser);
+        toast.success("User created successfully");
+      } else if (modalType === "edit") {
+        await updateUser(currentUser._id, currentUser);
+        setUsers((prev) =>
+          prev.map((user) => (user._id === currentUser._id ? currentUser : user))
+        );
+        toast.success("User updated successfully");
+      }
+      fetchUsers(search, page);
+      setModalType(null);
+      setError("");
+    } catch (error: any) {
+      toast.error(error.response?.data?.message)
     }
-    fetchUsers(search, page);
-    setModalType(null);
-    setError("");
     setLoading(false);
   };
+
+
+  // Undo action
+  const undo = () => {
+    if (history.length > 0) {
+      setFuture((prev) => [users, ...prev]);
+      setUsers(history[history.length - 1]);
+      setHistory((prev) => prev.slice(0, -1));
+    }
+  };
+
+  // Redo action
+  const redo = () => {
+    if (future.length > 0) {
+      setHistory((prev) => [...prev, users]);
+      setUsers(future[0]);
+      setFuture((prev) => prev.slice(1));
+    }
+  };
+
+  useEffect(() => {
+    fetchUsers(search, page);
+  }, [search, page]);
 
   return (
     <div className="container mt-5">
       <h2 className="mb-4 text-center">User Management</h2>
+
+      <ToastContainer position="top-right" autoClose={3000} />
 
       {/* Action Buttons */}
       <div className="d-flex gap-2 mb-3">
@@ -167,24 +230,8 @@ const UserTable = () => {
               <div className="modal-body">
                 {error && <div className="alert alert-danger">{error}</div>}
                 <form onSubmit={handleSubmit}>
-                  <div className="mb-3">
-                    <label className="form-label">Name</label>
-                    <input
-                      type="text"
-                      className="form-control"
-                      value={currentUser.name}
-                      onChange={(e) => setCurrentUser({ ...currentUser, name: e.target.value })}
-                    />
-                  </div>
-                  <div className="mb-3">
-                    <label className="form-label">Email</label>
-                    <input
-                      type="email"
-                      className="form-control"
-                      value={currentUser.email}
-                      onChange={(e) => setCurrentUser({ ...currentUser, email: e.target.value })}
-                    />
-                  </div>
+                  <input type="text" className="form-control mb-2" placeholder="Name" value={currentUser.name} onChange={(e) => setCurrentUser({ ...currentUser, name: e.target.value })} />
+                  <input type="email" className="form-control mb-2" placeholder="Email" value={currentUser.email} onChange={(e) => setCurrentUser({ ...currentUser, email: e.target.value })} />
                   <button type="submit" className="btn btn-primary">{modalType === "add" ? "Add User" : "Update User"}</button>
                 </form>
               </div>

@@ -2,11 +2,23 @@ import User from '../models/user';
 
 export const getUsers = async (req: any, res: any) => {
  try {
-  const users = await User.find();
+  const search = req.query.search || "";
+  const page = parseInt(req.query.page) || 1;
+  const limit = parseInt(req.query.limit) || 10;
+  const searchFilter = search
+   ? { name: { $regex: search, $options: "i" } } // Case-insensitive name match
+   : {};
+  // Count total users matching the search
+  const total = await User.countDocuments(searchFilter);
+  // Fetch paginated users
+  const users = await User.find(searchFilter)
+   .skip((page - 1) * limit)
+   .limit(limit);
+  console.log("users", users)
   if (!users.length) {
    return res.status(404).json({ message: "No users found" });
   }
-  res.status(200).json({ users });
+  res.status(200).json({ users, total });
  } catch (error) {
   console.error("Error fetching users:", error);
   res.status(500).json({ message: "Error fetching users", error });
