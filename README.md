@@ -1,7 +1,7 @@
 # Simple-user-management
 User Management System
 Technologies Used:
-Frontend: React, TypeScript, Bootstrap, React-Toastify
+Frontend: React, TypeScript, Bootstrap, React-Toastify, Vite for fast performance and setup
 Backend: Node.js, Express.js, MongoDB
 State Management: React useState, useEffect
 Features: Undo/Redo, User Management (Create, Edit, Delete), Export Table Data
