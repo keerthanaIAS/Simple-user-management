@@ -4,14 +4,12 @@ export const getUsers = async (req: any, res: any) => {
  try {
   const search = req.query.search || "";
   const page = parseInt(req.query.page) || 1;
-  const limit = parseInt(req.query.limit) || 10;
+  const limit = parseInt(req.query.limit) || 6;
   const searchFilter = search
-   ? { name: { $regex: search, $options: "i" } } // Case-insensitive name match
+   ? { name: { $regex: search, $options: "i" } } // Case insensitive name match
    : {};
-  // Count total users matching the search
-  const total = await User.countDocuments(searchFilter);
-  // Fetch paginated users
-  const users = await User.find(searchFilter)
+  const total = await User.countDocuments(searchFilter); // Count total users matching the search
+  const users = await User.find(searchFilter) // Fetch paginated users
    .skip((page - 1) * limit)
    .limit(limit);
   console.log("users", users)
@@ -28,17 +26,18 @@ export const getUsers = async (req: any, res: any) => {
 export const createUser = async (req: any, res: any) => {
  try {
   const { name, email } = req.body;
-  if (!name || !email) {
-   return res.status(400).json({ message: "All fields are required" });
+  if (!name || name.trim().length < 2) {
+   return res.status(400).json({ message: "Name must be at least 2 characters long" });
+  }
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/; // regex for email
+  if (!email || !emailRegex.test(email)) {
+   return res.status(400).json({ message: "Invalid email format" });
   }
   const existingUser = await User.findOne({ email });
   if (existingUser) {
    return res.status(400).json({ message: "Email already exists" });
   }
-  const user = await User.create({
-   name,
-   email,
-  });
+  const user = await User.create({ name: name.trim(), email: email.trim() });
   res.status(201).json({
    message: "User created successfully",
    user,
@@ -56,19 +55,28 @@ export const updateUser = async (req: any, res: any) => {
   if (!id) {
    return res.status(400).json({ message: "User ID is required" });
   }
-  const updatedUser = await User.findByIdAndUpdate(
-   id,
-   { name, email }
-  );
-  if (!updatedUser) {
+  const existingUser = await User.findById(id);
+  if (!existingUser) {
    return res.status(404).json({ message: "User not found" });
   }
+  if (name && (typeof name !== "string" || name.trim().length < 2)) {
+   return res.status(400).json({ message: "Name must be at least 2 characters long" });
+  }
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (email && (typeof email !== "string" || !emailRegex.test(email))) {
+   return res.status(400).json({ message: "Invalid email format" });
+  }
+  const updatedUser = await User.findByIdAndUpdate(
+   id,
+   { ...(name && { name: name.trim() }), ...(email && { email: email.trim() }) },
+   { new: true }
+  );
   res.status(200).json({
    message: "User updated successfully",
-   response: updatedUser,
+   user: updatedUser,
   });
  } catch (error) {
-  console.error(error);
+  console.error("Error updating user:", error);
   res.status(500).json({ message: "Error updating user", error });
  }
 };
@@ -86,4 +94,3 @@ export const deleteUser = async (req: any, res: any) => {
   res.status(500).json({ message: "Error deleting user", error });
  }
 };
-
